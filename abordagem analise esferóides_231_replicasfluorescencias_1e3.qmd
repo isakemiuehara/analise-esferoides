@@ -19,7 +19,7 @@ execute:
 ## Carregando pacotes
 
 ```{r}
-library(tidyverse)  ## control + enter - comentário # ggplot esta dentro do tidyverse
+library(tidyverse)  ### control + enter - comentário # ggplot esta dentro do tidyverse
 library(nlme) # modelo misto
 library(emmeans) # média marginal
 library(readxl)
