@@ -1,0 +1,123 @@
+---
+title: "Análise esferóides"
+subtitle: "Objetivo: analisar os experimentos dos esferóides utilizando modelos mistos - Fluorescencia"
+author: "Marcelo Silva"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+    df-print: paged
+editor: visual
+execute:
+  warning: false
+  message: false
+---
+
+## Carregando pacotes
+
+```{r}
+library(tidyverse)  # control + enter - comentário # ggplot esta dentro do tidyverse
+library(nlme) # modelo misto
+library(emmeans) # média marginal
+library(readxl)
+library(performance)
+```
+
+## Importanto planilhas
+
+::: callout-note
+Atalho para o sinal de atribuiçao é alt hifen
+
+Encadeamento é voce ligar uma operaçao na outra. Isso feito com o operador pipe. atalho ctrl + shift + m
+
+O primeiro nível de uma variavel categorica criada pela funcao factor() é automaticamente utilizado pelo r como
+:::
+
+```{r}
+set.seed(1234)
+# Eu vou transformar as variaveis tempo e grupo em variaveis categoricas.No R sao chamadas de factor()
+
+esferoides <-  readxl::read_xlsx(here::here('dados','fluorescencias_231_todos.xlsx')) 
+esferoides <- esferoides %>% 
+  mutate(
+    Replica = factor(Replica),
+    Grupo = factor(Grupo, levels = c("CT_DMSO", "Carbo","Doxo",  "Dupla","Pacli","TriplaCarbo","TriplaDoxo","TriplaPacli"))
+  ) %>% 
+  ungroup() %>% 
+  mutate(
+    ID = interaction(Grupo, Replica, drop = T),
+    logFluorescencia = log(Fluorescencia)
+  )
+```
+
+
+```{r}
+modelo1 <- lme(log(Fluorescencia) ~ Grupo, random = ~1 | ID,
+               weights = varIdent(form = ~1 | Grupo),
+              data = esferoides, method = "REML")
+summary(modelo1)
+
+```
+
+```{r}
+mm <- emmeans(modelo1, specs = 'Grupo')
+mm
+contrast(mm, method = 'trt.vs.ctrl' )
+plot(contrast(mm, method = 'trt.vs.ctrl'))
+```
+
+### Como eu escolho os pares para comparar?
+
+```{r}
+# meus níveis "CT_DMSO"   "Dupla"                     "Pacli"                "TriplaPacli"
+
+pares_escolhidos <- contrast(mm, method = list(
+  "CT_DMSO - Dupla"                = c( 1,  0,  0, -1,  0,  0,  0,  0),
+  "CT_DMSO - TriplaCarbo"             = c( 1,  0,  0,  0,  0, -1,  0,  0),
+  "CT_DMSO - TriplaDoxo"              = c( 1,  0,  0,  0,  0,  0, -1,  0),
+  "CT_DMSO - TriplaPacli"        = c( 1,  0,  0,  0,  0,  0,  0, -1),
+  "TriplaCarbo - Dupla"             = c( 0,  0,  0, -1,  0,  1,  0,  0),
+  "TriplaDoxo - Dupla"              = c( 0,  0,  0, -1,  0,  0,  1,  0),
+  "TriplaPacli - Dupla"        = c( 0,  0,  0, -1,  0,  0,  0,  1),
+  "Carbo - Dupla"                   = c( 0,  1,  0, -1,  0,  0,  0,  0),
+  "Doxo - Dupla"                    = c( 0,  0,  1, -1,  0,  0,  0,  0),
+  "Pacli - Dupla"               = c( 0,  0,  0, -1,  1,  0,  0,  0)
+), adjust = 'sidak')
+
+pares_escolhidos
+pares_ic <- confint(pares_escolhidos)
+names(pares_ic)
+
+```
+
+## Gráfico de floresta
+
+```{r}
+pares_ic <- confint(pares_escolhidos) %>%
+  as_tibble() %>%
+  mutate(contrast = fct_rev(factor(contrast, levels = unique(contrast))))
+
+grafico_pares <- ggplot(pares_ic, aes(x = exp(estimate), y = contrast)) +
+  geom_vline(xintercept = 1, linetype = "dashed") +
+  geom_errorbar(aes(xmin = exp(lower.CL), xmax = exp(upper.CL)),
+                orientation = "y", width = 0.3) +
+  geom_point(size = 3) +
+  geom_label(aes(label = round(exp(estimate), 2)), 
+    hjust = -0.3,      # desloca horizontalmente para a direita do ponto
+    size = 4,
+    linewidth = 0.2)+   # borda mais fina, opcional) +
+  scale_x_continuous(expand = expansion(mult = 0.1)) +
+  labs(x = "Razão das médias geométricas (IC 95%)", y = NULL) +
+  theme_bw(base_size = 14)
+
+grafico_pares
+
+ggsave("floresta_fluorescencia_231_todos.png", grafico_pares,
+       width = 10, height = 5, units = "in", dpi = 600, bg = "white")
+
+
+
+```

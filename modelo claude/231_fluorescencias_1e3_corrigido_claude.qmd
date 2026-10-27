@@ -1,0 +1,143 @@
+---
+title: "Análise esferóides"
+subtitle: "Objetivo: analisar os experimentos dos esferóides utilizando modelos mistos - Fluorescencia"
+author: "Marcelo Silva"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+    df-print: paged
+editor: visual
+execute:
+  warning: false
+  message: false
+---
+
+## Carregando pacotes
+
+```{r}
+library(tidyverse)  # ggplot está dentro do tidyverse
+library(nlme)       # modelo misto
+library(emmeans)    # média marginal
+library(readxl)
+library(here)
+library(performance)
+```
+
+## Importando planilhas
+
+::: callout-note
+Atalho para o sinal de atribuição é alt + hífen.
+
+Encadeamento é ligar uma operação na outra. Isso é feito com o operador pipe. Atalho: ctrl + shift + m.
+
+O primeiro nível de uma variável categórica criada pela função factor() é automaticamente utilizado pelo R como nível de referência.
+:::
+
+```{r}
+set.seed(1234)
+# Transformar Replica e Grupo em variáveis categóricas (factor() no R)
+
+esferoides <- readxl::read_xlsx(here::here("dados", "fluorescencias_231_1e3.xlsx")) %>%
+  mutate(
+    Replica = factor(Replica),
+    Grupo = factor(Grupo, levels = c("CT_DMSO", "Carbo", "Doxo", "Dupla", "Pacli", "TriplaCarbo", "TriplaDoxo", "TriplaPacli"))
+  ) %>%
+  mutate(
+    ID = interaction(Grupo, Replica, drop = TRUE)
+  )
+```
+
+## Modelos
+
+```{r}
+# Modelo original: intercepto aleatório por Grupo x Replica
+modelo1 <- lme(log(Fluorescencia) ~ Grupo, random = ~1 | ID,
+               weights = varIdent(form = ~1 | Grupo),
+               data = esferoides, method = "REML")
+summary(modelo1)
+```
+
+```{r}
+# Alternativa: réplica biológica compartilhada entre os grupos (Replica + Replica:Grupo)
+modelo2 <- lme(log(Fluorescencia) ~ Grupo, random = ~1 | Replica/Grupo,
+               weights = varIdent(form = ~1 | Grupo),
+               data = esferoides, method = "REML")
+summary(modelo2)
+
+# Mesma parte fixa, REML: a comparação é válida
+anova(modelo1, modelo2)
+```
+
+```{r}
+# Escolha o modelo que será usado nas médias marginais e contrastes
+modelo_final <- modelo1   # troque por modelo2 se ele for preferível
+```
+
+## Médias marginais
+
+```{r}
+mm <- emmeans(modelo_final, specs = "Grupo")
+mm
+```
+
+## Contrastes escolhidos
+
+Todos os contrastes seguem a direção **tratamento − referência**. Na escala de razão (`exp(estimate)`), valores abaixo de 1 indicam fluorescência menor que a referência.
+
+```{r}
+# Vetores de contraste montados pelo NOME do nível, não pela posição
+lv <- levels(esferoides$Grupo)
+
+cv <- function(pos, neg) {
+  v <- setNames(rep(0, length(lv)), lv)
+  v[pos] <- 1
+  v[neg] <- -1
+  v
+}
+
+pares_escolhidos <- contrast(mm, method = list(
+  "Dupla - CT_DMSO"        = cv("Dupla",       "CT_DMSO"),
+  "TriplaCarbo - CT_DMSO"  = cv("TriplaCarbo", "CT_DMSO"),
+  "TriplaDoxo - CT_DMSO"   = cv("TriplaDoxo",  "CT_DMSO"),
+  "TriplaPacli - CT_DMSO"  = cv("TriplaPacli", "CT_DMSO"),
+  "TriplaCarbo - Dupla"    = cv("TriplaCarbo", "Dupla"),
+  "TriplaDoxo - Dupla"     = cv("TriplaDoxo",  "Dupla"),
+  "TriplaPacli - Dupla"    = cv("TriplaPacli", "Dupla"),
+  "Carbo - Dupla"          = cv("Carbo",       "Dupla"),
+  "Doxo - Dupla"           = cv("Doxo",        "Dupla"),
+  "Pacli - Dupla"          = cv("Pacli",       "Dupla")
+), adjust = "sidak")
+
+pares_escolhidos
+```
+
+## Gráfico de floresta
+
+```{r}
+pares_ic <- confint(pares_escolhidos) %>%
+  as_tibble() %>%
+  # primeiro contraste no topo do gráfico
+  mutate(contrast = fct_rev(factor(contrast, levels = unique(contrast))))
+
+grafico_pares <- ggplot(pares_ic, aes(x = exp(estimate), y = contrast)) +
+  geom_vline(xintercept = 1, linetype = "dashed") +
+  geom_errorbar(aes(xmin = exp(lower.CL), xmax = exp(upper.CL)),
+                orientation = "y", width = 0.3) +
+  geom_point(size = 3) +
+  geom_label(aes(label = round(exp(estimate), 2)),
+             hjust = -0.3,   # desloca à direita do ponto
+             size = 4,
+             linewidth = 0.2) +
+  scale_x_continuous(expand = expansion(mult = 0.1)) +
+  labs(x = "Razão das médias geométricas (IC 95%)", y = NULL) +
+  theme_bw(base_size = 14)
+
+grafico_pares
+
+ggsave("floresta_fluorescencia_231_1e3modelo1.png", grafico_pares,
+       width = 10, height = 5, units = "in", dpi = 600, bg = "white")
+```
