@@ -53,7 +53,7 @@ esferoides %>% count(ID)
 ```
 
 ```{r}
-# Modelo original: intercepto aleatório por Grupo x Replica 
+# Modelo: Replica como efeito fixo 
 modelo1 <- lme(log(Fluorescencia) ~ Grupo + Replica, random = ~1 | ID,
                weights = varIdent(form = ~1 | Grupo),
                data = esferoides, method = "REML")
@@ -63,7 +63,7 @@ summary(modelo1)
 
 ```{r}
 # Alternativa: réplica biológica compartilhada entre os grupos (Replica + Replica:Grupo)
-modelo2 <- lme(log(Fluorescencia) ~ Grupo, random = ~1 | Replica/Grupo,
+modelo2 <- lme(log(Fluorescencia) ~ Grupo, random = ~1 | ID,
                weights = varIdent(form = ~1 | Grupo),
                data = esferoides, method = "REML")
 summary(modelo2)
