@@ -29,6 +29,8 @@ library(performance)
 ## Importanto planilhas
 
 ::: callout-note
+TESTANDO COMMIT
+
 Atalho para o sinal de atribuiçao é alt hifen
 
 Encadeamento é voce ligar uma operaçao na outra. Isso feito com o operador pipe. atalho ctrl + shift + m
